@@ -397,3 +397,180 @@ exit()
 - **Resultado Esperado:** Ao recarregar a interface web (`Ctrl + Shift + R`), o usuário
   exibirá o nome **Super Admin**, o logotipo customizado no canto superior direito e
   acesso irrestrito a todos os módulos, menus técnicos e campos ocultos do Odoo.
+
+## 8. Se Acontecer: Campos "Unidade de Medida" Ausentes no Cadastro de Produtos
+
+- **O Problema:** Ao abrir o formulário de um produto
+  (`Inventário > Produtos > Produtos > Cadeira de Escritório Preta`), os campos
+  **Unidade de Medida** e **Unidade de Medida de Compra** não aparecem na aba
+  _Informações gerais_.
+- **A Causa:** O parâmetro global de Unidades de Medida vem desabilitado por padrão nas
+  configurações gerais do Inventário, ocultando esses seletores em todos os cadastros de
+  produtos.
+- **A Solução (Passo a Passo):**
+
+  **Opção 1: Ativar pela Interface Web (Recomendado)**
+
+  1. Acesse **Inventário > Configuração > Definições**.
+  2. Na seção **Produtos**, marque a caixa **Unidades de Medida** (_Vender e comprar
+     produtos em diferentes unidades de medida_).
+  3. Clique em **Salvar** no topo da tela.
+  4. Retorne ao formulário do produto e pressione **`Ctrl + Shift + R`** para atualizar
+     o cache.
+
+  **Opção 2: Ativar Permissão Técnica via Terminal (Odoo Shell)** Para forçar a
+  liberação do grupo de Unidades de Medida diretamente no banco de dados:
+
+  1. Abra o terminal na raiz do projeto e acesse o Odoo Shell:
+     ```bash
+     docker compose run --rm odoo odoo shell -d devel
+     ```
+  2. Execute o comando Python para vincular o grupo `uom.group_uom` ao Administrador:
+     ```python
+     env.ref('uom.group_uom').write({'users': [(4, env.ref('base.user_admin').id)]})
+     env.cr.commit()
+     ```
+  3. Digite `exit()` para encerrar a sessão.
+
+---
+
+### 8.1 Estrutura do Formulário Final (Cadeira de Escritório Preta)
+
+Após a ativação das Unidades de Medida, o cadastro do produto `[FURN_0269]` deve
+apresentar a seguinte disposição e preenchimento:
+
+- **Bloco Principal (Cabeçalho):**
+
+  - **Nome do Produto:** `Cadeira de Escritório Preta`
+  - **Pode ser Vendido:** Marcado (`✔`)
+  - **Pode ser Comprado:** Marcado (`✔`)
+
+- **Aba Informações Gerais:**
+  - **Tipo de Produto:** `Produto`
+  - **Categoria de Produtos:** `All / Saleable / Office Furniture`
+  - **Referência Interna:** `FURN_0269`
+  - **Código de Barras:** Em branco
+  - **Preços de Venda:** `$12,50`
+  - **Impostos de Clientes:** Em branco
+  - **Custo:** `$18,00`
+  - **Empresa:** Em branco
+  - **Unidade de Medida:** `Unidades`
+  - **Unidade de Medida de Compra:** `Unidades`
+
+## 9. Instalação e Solução de Problemas: Módulo Stock Request (OCA)
+
+Guia completo para clonagem, configuração, instalação e resolução de exceções técnicas
+durante a integração do módulo **`stock_request`** (repositório OCA
+`stock-logistics-warehouse`) em ambiente Doodba/Docker (Odoo 14.0).
+
+---
+
+### 9.1. Configuração de Repositórios e Addons
+
+Para que a arquitetura do Doodba reconheça o módulo de requisições de estoque, o
+repositório e suas dependências devem estar devidamente mapeados nos arquivos YAML do
+diretório `odoo/custom/src/`.
+
+#### 1. Configurar `odoo/custom/src/repos.yaml`
+
+Adicione o repositório da OCA com a sintaxe de checkout e destino corretas:
+
+```yaml
+./stock-logistics-warehouse:
+  depth: 10
+  checkout:
+    github_default: "14.0"
+  remotes:
+    oca: [https://github.com/OCA/stock-logistics-warehouse.git](https://github.com/OCA/stock-logistics-warehouse.git)
+  target: oca 14.0
+```
+
+#### 2. Configurar `odoo/custom/src/addons.yaml`
+
+Associe o diretório baixado ao módulo específico que deve ser indexado pelo Odoo:
+
+```yaml
+stock-logistics-warehouse:
+  - stock_request
+```
+
+#### 3. Clonagem Manual dos Repositórios no Host
+
+Para garantir a presença física dos módulos no sistema de arquivos e evitar falhas na
+criação de links simbólicos (_symlinks_), clone os repositórios diretamente na máquina
+local:
+
+```bash
+# Repositório OCA contendo o módulo stock_request
+git clone -b 14.0 --depth 1 [https://github.com/OCA/stock-logistics-warehouse.git](https://github.com/OCA/stock-logistics-warehouse.git) odoo/custom/src/stock-logistics-warehouse
+
+# Repositório de compras complementar registrado no addons.yaml
+git clone -b 14.0 --depth 1 [https://github.com/Escodoo/purchase-addons.git](https://github.com/Escodoo/purchase-addons.git) odoo/custom/src/purchase-addons
+```
+
+---
+
+### 9.2. Compilação da Imagem e Instalação no Banco de Dados
+
+Após ajustar as configurações e clonar o código-fonte, reconstrua a imagem Docker e
+execute a instalação isolada do aplicativo no banco de desenvolvimento (`devel`):
+
+```bash
+# 1. Reconstruir a imagem Docker para registrar a nova estrutura do custom/src
+docker compose build odoo
+
+# 2. Executar a instalação do módulo stock_request com perfil elevado (root)
+docker compose run --rm -u 0 odoo odoo -d devel -i stock_request --stop-after-init
+
+# 3. Inicializar os contêineres em segundo plano
+docker compose up -d
+```
+
+---
+
+### 9.3. Matriz de Diagnóstico e Solução de Erros (Troubleshooting)
+
+Durante a montagem de ambientes Doodba com permissões mistas (máquina host vs. usuário
+interno do container), os seguintes erros podem ocorrer:
+
+| Exceção Identificada nos Logs                                        | Causa Raiz                                                                                                                                               | Procedimento de Correção                                                                                                                                                                                                                   |
+| :------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PermissionError: [Errno 13] Permission denied`                      | Arquivos em `/opt/odoo/auto` ou os binários `/usr/local/bin/odoo` foram gravados por comandos com `sudo`/`root` e bloqueiam o usuário `odoo` (UID 1000). | Ajustar permissões da pasta temporária e ownership do volume: <br>`docker compose run --rm --entrypoint "" -u 0 odoo bash -c "chmod -R 777 /opt/odoo/auto /var/lib/odoo /tmp && chown -R 1000:1000 /opt/odoo/auto /var/lib/odoo"`          |
+| `FileNotFoundError: [Errno 2] .../stock_request -> .../auto/addons/` | O diretório `/opt/odoo/auto/addons` foi apagado na limpeza de volumes ou o repositório git não existe no caminho local especificado.                     | Clonar o repositório na máquina host e recriar o diretório de destino ignorando o entrypoint padrão: <br>`docker compose run --rm --entrypoint "" -u 0 odoo bash -c "mkdir -p /opt/odoo/auto/addons && chown -R 1000:1000 /opt/odoo/auto"` |
+| `WARNING: invalid module names, ignored: stock_request`              | Declaração de URL direta ou nomes com espaços/hífens incorretos no arquivo `addons.yaml`.                                                                | Garantir que o `addons.yaml` contenha apenas a chave do diretório local (`stock-logistics-warehouse:`) e reexecutar o `docker compose build odoo`.                                                                                         |
+| `Read-only file system` ao rodar `chmod`/`chown`                     | A pasta `/opt/odoo/custom/src` é montada pelo Docker como volume de apenas leitura (`:ro`).                                                              | Ajustar as permissões de leitura diretamente no terminal do sistema operacional da máquina host: <br>`chmod -R a+rX odoo/custom`                                                                                                           |
+
+---
+
+### 9.4. Script Universal de Restauração de Ambiente
+
+Se o container da aplicação Odoo parar de responder, cair continuamente em loop de
+reinicialização ou apresentar erros de permissão ao iniciar, execute a sequência
+completa de recuperação abaixo:
+
+```bash
+# 1. Dar permissão de leitura global aos arquivos locais da máquina host
+chmod -R a+rX odoo/custom
+
+# 2. Recriar diretórios de trabalho internos e ajustar permissões no container
+docker compose run --rm --entrypoint "" -u 0 odoo bash -c "mkdir -p /opt/odoo/auto/addons && chmod -R 777 /opt/odoo/auto /var/lib/odoo /tmp && chown -R 1000:1000 /opt/odoo/auto /var/lib/odoo"
+
+# 3. Forçar a recriação limpa do container da aplicação
+docker compose up -d --force-recreate odoo
+
+# 4. Monitorar o log de execução até a subida do servidor
+docker compose logs -f odoo
+```
+
+---
+
+### 9.5. Validação da Instalação na Interface Gráfica
+
+1. Abra o navegador web no endereço `http://localhost:14069`.
+2. Atualize a página forçando a limpeza do cache local com **`Ctrl + Shift + R`**.
+3. Acesse o menu **Aplicativos**, remova o filtro padrão de _Aplicativos_ na barra de
+   pesquisa e busque por `stock_request`.
+4. Confirme que o cartão **Stock Request** exibe a indicação **Instalado**.
+5. Acesse o aplicativo **Inventário** e certifique-se de que os menus **Operações >
+   Pedidos de Estoque** (_Stock Requests_) e **Pedidos de Pedido de Estoque** (_Stock
+   Request Orders_) estão ativos para operação.

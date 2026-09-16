@@ -25,3 +25,11 @@
     escodoo: https://github.com/Escodoo/l10n-brazil
     origin: https://github.com/OCA/l10n-brazil
   target: origin merged
+
+./stock-logistics-warehouse:
+  depth: 10
+  checkout:
+    github_default: "14.0"
+  remotes:
+    oca: https://github.com/OCA/stock-logistics-warehouse.git
+  target: oca 14.0

@@ -6,3 +6,6 @@ purchase-addons:
 
 l10n-brazil:
   - "*"
+
+stock-logistics-warehouse:
+  - stock_request
