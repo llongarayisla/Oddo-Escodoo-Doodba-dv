@@ -879,3 +879,243 @@ para a resolução.
   sistema recalculou a regra `OP/00006`, identificou o déficit líquido de 18 unidades e
   gerou automaticamente a Solicitação de Cotação `P00012` vinculada à regra de
   reabastecimento.
+
+# Documentação de Purga e Reconfiguração - Odoo Doodba
+
+Este documento registra os procedimentos de banco de dados (`PostgreSQL`) executados no
+banco **`devel`** dentro do projeto **Odoo-Escudo** para realizar o reset limpo
+(clean-slate) do ambiente de testes.
+
+---
+
+## 1. Escopo das Modificações
+
+- **Preservação de Dados:** Retenção exclusiva do produto **Cadeira de Conferência**
+  (com suas variações/templates associados).
+- **Limpeza Transacional:** Remoção completa de registros operacionais (vendas, compras,
+  movimentações de estoque, inventários físicos, faturamento e requisições).
+- **Limpeza Estrutural:** Exclusão de armazéns, regras, rotas, tipos de operações,
+  atributos e categorias de produto secundárias (mantendo apenas a categoria **All**).
+- **Reconfiguração Multi-Company:**
+  - Empresa principal (ID 1) renomeada para **ISLA Sementes (Porto Alegre)** (Matriz).
+  - Nova empresa criada e configurada: **ISLA Sementes (Itapuã)** (Filial, vinculada via
+    `parent_id`).
+  - Atualização dos parceiros (`res_partner`) associados a ambas as empresas.
+- **Sequências de Numeração:** Reset dos contadores em `ir_sequence` para iniciar
+  contagens a partir de 1.
+
+---
+
+## 2. Scripts de Execução
+
+### Etapa 1: Limpeza Transacional e Purga de Produtos Excedentes
+
+Elimina dados operacionais do sistema desvinculando foreign keys em ordem cronológica
+inversa de dependência.
+
+```sql
+BEGIN;
+
+-- 1. Limpar Modelos e Opções de Venda
+DELETE FROM sale_order_template_option;
+DELETE FROM sale_order_template_line;
+DELETE FROM sale_order_template;
+
+-- 2. Limpar Faturamento / Contabilidade
+DELETE FROM account_move_line;
+DELETE FROM account_move;
+
+-- 3. Limpar Vendas e Compras
+DELETE FROM sale_order_line;
+DELETE FROM sale_order;
+DELETE FROM purchase_order_line;
+DELETE FROM purchase_order;
+
+-- 4. Limpar Requisições de Estoque e Compras (SRO/Materiais)
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'stock_request') THEN
+        DELETE FROM stock_request;
+    END IF;
+    IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'material_purchase_requisition_line') THEN
+        DELETE FROM material_purchase_requisition_line;
+        DELETE FROM material_purchase_requisition;
+    END IF;
+END $$;
+
+-- 5. Limpar Movimentações, Inventários e Quantidades em Estoque
+DELETE FROM stock_inventory_line;
+DELETE FROM stock_inventory;
+DELETE FROM stock_move_line;
+DELETE FROM stock_move;
+DELETE FROM stock_picking;
+DELETE FROM stock_scrap;
+DELETE FROM stock_quant;
+DELETE FROM stock_valuation_layer;
+DELETE FROM stock_warehouse_orderpoint;
+
+-- 6. Limpar Lotes e Números de Série
+DELETE FROM stock_production_lot;
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'stock_lot') THEN
+        DELETE FROM stock_lot;
+    END IF;
+END $$;
+
+-- 7. Limpar Fornecedores e Tabelas de Preço
+DELETE FROM product_supplierinfo;
+DELETE FROM product_pricelist_item;
+
+-- 8. Limpar Produtos (Preservando apenas 'Cadeira de Conferência')
+DELETE FROM product_product
+WHERE product_tmpl_id NOT IN (
+    SELECT id FROM product_template WHERE name LIKE '%Cadeira de Conferência%'
+);
+
+DELETE FROM product_template
+WHERE name NOT LIKE '%Cadeira de Conferência%';
+
+-- 9. Resetar contadores das sequências
+UPDATE ir_sequence SET number_next = 1;
+
+COMMIT;
+```
+
+---
+
+### Etapa 2: Limpeza Estrutural e Setup Multi-Company (Clonagem da Matriz)
+
+Purga de dados mestres de estoque (armazéns, rotas e atributos), preservação da
+categoria **All**, atualização da empresa principal e criação da filial clonando
+parâmetros contábeis obrigatórios.
+
+```sql
+BEGIN;
+
+-- 1. Desvincular Categorias e Atributos dos Produtos/Templates
+UPDATE product_template SET categ_id = (SELECT id FROM product_category WHERE name = 'All' LIMIT 1);
+DELETE FROM product_attribute_value_product_template_attribute_line_rel;
+DELETE FROM product_template_attribute_value;
+DELETE FROM product_template_attribute_line;
+DELETE FROM product_attribute_value;
+DELETE FROM product_attribute;
+
+-- 2. Limpar Categorias (Preservando apenas 'All')
+DELETE FROM product_category WHERE name != 'All' AND parent_id IS NOT NULL;
+DELETE FROM product_category WHERE name != 'All';
+
+-- 3. Limpar Regras de Estoque
+DELETE FROM stock_rule;
+
+-- 4. Desvincular e Remover Armazéns e Tipos de Operação
+UPDATE stock_warehouse SET reception_route_id = NULL, delivery_route_id = NULL, crossdock_route_id = NULL;
+DELETE FROM stock_warehouse;
+DELETE FROM stock_picking_type;
+
+-- 5. Limpar Vinculações e Rotas de Estoque
+DELETE FROM stock_route_warehouse;
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'stock_warehouse_orderpoint_route_rel') THEN
+        DELETE FROM stock_warehouse_orderpoint_route_rel;
+    END IF;
+    IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'stock_location_route_categ_rel') THEN
+        DELETE FROM stock_location_route_categ_rel;
+    END IF;
+END $$;
+
+DELETE FROM stock_location_route;
+
+-- 6. Desvincular Locais da Empresa e Limpar Locais Customizados
+UPDATE res_company SET internal_transit_location_id = NULL;
+DELETE FROM stock_location WHERE location_id IS NOT NULL AND usage NOT IN ('supplier', 'customer', 'inventory', 'production');
+
+-- 7. Atualizar Empresa Principal (Matriz - Porto Alegre)
+UPDATE res_company SET name = 'ISLA Sementes (Porto Alegre)' WHERE id = 1 OR name LIKE '%San Francisco%';
+UPDATE res_partner SET name = 'ISLA Sementes (Porto Alegre)' WHERE id = (SELECT partner_id FROM res_company WHERE id = 1);
+
+-- 8. Criar a Filial 'ISLA Sementes (Itapuã)' Clonando Atributos da Matriz
+DO $$
+DECLARE
+    new_partner_id INT;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM res_company WHERE name = 'ISLA Sementes (Itapuã)') THEN
+        INSERT INTO res_partner (name, is_company, active)
+        VALUES ('ISLA Sementes (Itapuã)', TRUE, TRUE)
+        RETURNING id INTO new_partner_id;
+
+        CREATE TEMP TABLE temp_company AS SELECT * FROM res_company WHERE id = 1;
+
+        UPDATE temp_company
+        SET id = nextval('res_company_id_seq'),
+            name = 'ISLA Sementes (Itapuã)',
+            partner_id = new_partner_id;
+
+        INSERT INTO res_company SELECT * FROM temp_company;
+        DROP TABLE temp_company;
+    END IF;
+END $$;
+
+COMMIT;
+```
+
+---
+
+### Etapa 3: Definição de Hierarquia Matriz/Filial e Ajustes de Parceiros
+
+Vincula a empresa de Itapuã como filial de Porto Alegre e garante a correta nomenclatura
+dos parceiros associados.
+
+```sql
+BEGIN;
+
+-- 1. Definir Porto Alegre como Matriz (parent_id) e Itapuã como Filial
+UPDATE res_company
+SET parent_id = (SELECT id FROM res_company WHERE name = 'ISLA Sementes (Porto Alegre)' LIMIT 1)
+WHERE name = 'ISLA Sementes (Itapuã)';
+
+-- 2. Corrigir o Nome do Parceiro da Matriz
+UPDATE res_partner
+SET name = 'ISLA Sementes (Porto Alegre)'
+WHERE id = (SELECT partner_id FROM res_company WHERE name = 'ISLA Sementes (Porto Alegre)');
+
+-- 3. Assegurar Vinculação do Parceiro na Filial
+UPDATE res_company
+SET partner_id = (SELECT id FROM res_partner WHERE name = 'ISLA Sementes (Itapuã)' LIMIT 1)
+WHERE name = 'ISLA Sementes (Itapuã)' AND partner_id IS NULL;
+
+COMMIT;
+```
+
+---
+
+## 3. Comandos de Aplicação via Docker Compose
+
+Instruções executadas no terminal do servidor/workspace (`~/Projetos/Odoo-Escudo`):
+
+1. **Injeção do SQL diretamente no container de banco:**
+
+   ```bash
+   docker compose exec -T db psql -U odoo -d devel << 'EOF'
+   -- [Inserir o bloco SQL desejado aqui]
+   EOF
+   ```
+
+2. **Reinicialização do container da aplicação Odoo** (necessário para redefinir caches
+   ORM e recarregar a interface):
+   ```bash
+   docker compose restart odoo
+   ```
+
+---
+
+## 4. Status Final do Ambiente
+
+- **Status da Transação:** Sucesso (`COMMIT` confirmado).
+- **Empresas:**
+  - `ISLA Sementes (Porto Alegre)`: Matriz (ID 1).
+  - `ISLA Sementes (Itapuã)`: Filial (`parent_id` referenciando a Matriz).
+- **Estoque & Cadastros:** Base sem registros transacionais, sem rotas/locais residuais
+  de demo e contendo exclusivamente a categoria `All` e os produtos vinculados à
+  `Cadeira de Conferência`.
