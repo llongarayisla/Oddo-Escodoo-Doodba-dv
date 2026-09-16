@@ -1,0 +1,8 @@
+ENV:
+  DEFAULT_REPO_PATTERN: https://github.com/Escodoo/{}.git
+
+purchase-addons:
+  - "*"
+
+l10n-brazil:
+  - "*"
