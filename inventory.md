@@ -644,3 +644,68 @@ ValueError: Invalid field 'count_sr_todo' on model 'stock.picking.type'
 4. Confirme a presença do novo painel **Requisições de Estoque** posicionado ao lado das
    demais operações (Recepções, Transferências Internas e Entregas) exibindo os
    contadores em tempo real.
+
+### 9.7. Configuração Global de Rotas e Regras de Reabastecimento para Requisições
+
+Durante a operação das Ordens de Requisição de Estoque (`stock.request.order`), o motor
+de aquisição (_procurement_) do Odoo exige que existam rotas e regras de reabastecimento
+válidas apontando para a localização de destino selecionada.
+
+Sem essa parametrização global, a tentativa de confirmação de requisições em
+localizações secundárias (como `WH/Input`, `WH/Packing Zone` ou sub-estoques de filiais)
+gera a exceção:
+
+```text
+Erro de Usuário: Nenhuma regra foi encontrada para reabastecer "[PRODUTO]" em "[LOCALIZAÇÃO]". Verifique a configuração das rotas no produto.
+```
+
+---
+
+#### 1. Configuração do Armazém e Habilitação de Rotas de Requisição
+
+Para que qualquer localização do armazém possa receber produtos via requisição sem a
+necessidade de rotas MTO manuais por linha:
+
+1. Acesse **Inventário > Configuração > Armazéns**.
+2. Abra o armazém desejado (ex: **San Francisco** / `WH`).
+3. Na aba **Configuração do Armazém**, certifique-se de definir os fluxos de entrada e
+   saída conforme a operação da empresa (ex: _Receber mercadorias diretamente (1 etapa)_
+   ou _Regra de 2/3 etapas_).
+4. Verifique a seção **Reabastecimento**: garanta que as rotas de fornecimento padrão da
+   empresa (_Comprar_, _Fabricar_ ou _Transferências Internas_) estejam ativas.
+
+---
+
+#### 2. Liberação de Rotas nos Produtos (Ação em Massa)
+
+Para evitar ter que editar o cadastro de produto por produto individualmente, aplique a
+rota de reabastecimento/compra em lote para todo o catálogo:
+
+1. Acesse **Inventário > Produtos > Produtos**.
+2. Alterne para a exibição em **Lista** (ícone no canto superior direito).
+3. Selecione a caixa de seleção no topo da tabela para marcar todos os produtos.
+4. Clique no botão **Ações** (ícone de engrenagem) e escolha **Ação em Massa / Editar**.
+5. No campo **Rotas**, adicione as rotas padrão da sua operação (ex: _Comprar_,
+   _Replenish on Order (MTO)_).
+6. Clique em **Salvar**.
+
+---
+
+#### 3. Criação de Regras de Reabastecimento Automático (Pull Rules) por Localização
+
+Caso deseje que localizações específicas (como `WH/Input` ou estoques intermediários)
+recebam materiais automaticamente via Requisição de Estoque:
+
+1. Acesse **Inventário > Configuração > Regras de Reabastecimento** (ou **Regras de
+   Armazenamento**).
+2. Clique em **Criar** e configure o padrão de destino:
+   - **Localização**: Selecione a localização desejada (ex:
+     `WH/Input/Order Processing`).
+   - **Quantidade Mínima**: `0,00`
+   - **Quantidade Máxima**: `0,00` (ou o limite desejado para o estoque local).
+   - **Múltiplo de Quantidade**: `1,00`
+3. Salve a regra.
+
+Com essa estrutura ativa, qualquer solicitação criada pelo módulo `stock_request` em
+qualquer localização e produto do sistema encontrará a regra de suprimento
+correspondente e moverá a ordem para o status **Em Progresso** sem travas operacionais.
