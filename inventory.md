@@ -574,3 +574,73 @@ docker compose logs -f odoo
 5. Acesse o aplicativo **Inventário** e certifique-se de que os menus **Operações >
    Pedidos de Estoque** (_Stock Requests_) e **Pedidos de Pedido de Estoque** (_Stock
    Request Orders_) estão ativos para operação.
+
+### 9.6. Integração do Card na Visão Geral do Inventário (stock_request_picking_type)
+
+Por padrão, o módulo `stock_request` disponibiliza apenas os menus e fluxos de
+solicitação de estoque de forma isolada. Para que o card **Requisições de Estoque** seja
+integrado ao painel principal do **Inventário > Visão Geral** (Dashboard Kanban de Tipos
+de Operação), é necessário ativar o submódulo estendido
+**`stock_request_picking_type`**.
+
+---
+
+#### 1. Mapeamento no `addons.yaml`
+
+Inclua o submódulo sob o diretório do repositório OCA `stock-logistics-warehouse` no
+arquivo `odoo/custom/src/addons.yaml`:
+
+```yaml
+stock-logistics-warehouse:
+  - stock_request
+  - stock_request_picking_type
+```
+
+---
+
+#### 2. Instalação e Sincronização do Schema no Banco de Dados
+
+Para registrar os novos campos computados no ORM (como o indicador de pendências
+`count_sr_todo`) e evitar erros de campos inválidos nas telas, execute a atualização
+encadeada dos módulos:
+
+```bash
+# 1. Instalar e atualizar os módulos de requisição de estoque no banco de desenvolvimento (devel)
+docker compose run --rm -u 0 odoo odoo -d devel -u stock_request,stock_request_picking_type --stop-after-init
+
+# 2. Reiniciar o serviço web da aplicação Odoo
+docker compose restart odoo
+
+# 3. Acompanhar os logs até o término da inicialização
+docker compose logs -f odoo
+```
+
+---
+
+#### 3. Resolução de Erros de Campo Inválido (`count_sr_todo`)
+
+Caso a interface gráfica apresente um pop-up com a exceção abaixo ao tentar abrir a tela
+de Visão Geral do Inventário:
+
+```text
+ValueError: Invalid field 'count_sr_todo' on model 'stock.picking.type'
+```
+
+- **Causa Raiz:** O cache de visões (views XML) do Odoo tentou renderizar o elemento
+  `count_sr_todo` no Kanban antes que o campo computado Python do modelo
+  `stock.picking.type` fosse totalmente registrado e reindexado na memória do ORM.
+- **Solução:** O comando de atualização `-u stock_request,stock_request_picking_type`
+  reestrutura a tabela no banco de dados e limpa a memória do registry, resolvendo a
+  falha imediatamente após a reinicialização da instância.
+
+---
+
+#### 4. Validação do Dashboard
+
+1. No navegador, acesse `http://localhost:14069`.
+2. Force a atualização dos ativos estáticos e limpeza de cache da página pressionando
+   **`Ctrl + Shift + R`**.
+3. Navegue até o aplicativo **Inventário > Visão Geral**.
+4. Confirme a presença do novo painel **Requisições de Estoque** posicionado ao lado das
+   demais operações (Recepções, Transferências Internas e Entregas) exibindo os
+   contadores em tempo real.

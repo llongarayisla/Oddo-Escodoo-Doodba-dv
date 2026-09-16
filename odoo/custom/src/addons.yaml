@@ -9,3 +9,4 @@ l10n-brazil:
 
 stock-logistics-warehouse:
   - stock_request
+  - stock_request_picking_type
