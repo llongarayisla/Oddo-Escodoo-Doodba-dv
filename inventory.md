@@ -709,3 +709,173 @@ recebam materiais automaticamente via Requisição de Estoque:
 Com essa estrutura ativa, qualquer solicitação criada pelo módulo `stock_request` em
 qualquer localização e produto do sistema encontrará a regra de suprimento
 correspondente e moverá a ordem para o status **Em Progresso** sem travas operacionais.
+
+## 10. Remoção de Empresas Indesejadas e Purga de Dados do Banco
+
+Durante a inicialização do Odoo em ambiente de desenvolvimento (Doodba/Docker), é comum
+a inserção de dados de demonstração contendo múltiplas empresas (como _My Company
+(Chicago)_). A exclusão dessas estruturas pela interface web gera bloqueios por conta de
+restrições de integridade referencial (_Foreign Keys_) do PostgreSQL.
+
+Abaixo está o procedimento para purgar empresas indesejadas e seus dados correlatos via
+terminal, juntamente com o diagnóstico das falhas conhecidas durante o processo.
+
+---
+
+### 10.1. Erros Conhecidos e Soluções
+
+| Erro Retornado no Terminal                                                        | Causa Raiz                                                                                            | Solução Aplicada                                                                                                          |
+| :-------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------ |
+| `relation "stock_route" does not exist`                                           | Nome incorreto da tabela de rotas do core do Odoo no script SQL.                                      | Utilizar o nome correto da tabela: `stock_location_route`.                                                                |
+| `violates foreign key constraint "stock_warehouse_reception_route_id_fkey"`       | Dependência circular entre armazéns (`stock_warehouse`) e suas rotas de recepção/entrega.             | Zerar previamente os campos de rotas na tabela de armazéns (`reception_route_id = NULL`).                                 |
+| `column "pbm_route_id" does not exist`                                            | Tentativa de zerar colunas relativas ao módulo de Fabricação (`mrp`) em bases sem o módulo instalado. | Zerar estritamente os campos nativos do core: `reception_route_id`, `delivery_route_id` e `crossdock_route_id`.           |
+| `column "parent_id" does not exist`                                               | Uso de nome de coluna incorreto na hierarquia de localizações.                                        | Utilizar o campo correto do Odoo: `location_id`.                                                                          |
+| `violates foreign key constraint "res_company_internal_transit_location_id_fkey"` | A tabela `res_company` possui referência direta para a localização de trânsito interno.               | Desvincular a localização de trânsito na empresa antes de remover as localizações: `internal_transit_location_id = NULL`. |
+| `violates foreign key constraint "stock_inventory_line_location_id_fkey"`         | Registros em ajustes de inventário (`stock_inventory_line`) apontando para localizações da empresa.   | Deletar primeiro as linhas de inventário (`stock_inventory_line`) e os inventários (`stock_inventory`) vinculados.        |
+
+---
+
+### 10.2. Comando Necessário para Remoção Completa
+
+Execute o bloco abaixo no terminal para realizar a purga da empresa **Chicago** e manter
+exclusivamente a estrutura de **San Francisco**:
+
+```bash
+docker compose exec -T db psql -U odoo -d devel -c "
+DO \$\$
+DECLARE
+    chicago_id INT;
+BEGIN
+    SELECT id INTO chicago_id FROM res_company WHERE name LIKE '%Chicago%';
+
+    IF chicago_id IS NOT NULL THEN
+        -- 1. Desvincula a localização de trânsito da própria empresa Chicago
+        UPDATE res_company SET internal_transit_location_id = NULL WHERE id = chicago_id;
+
+        -- 2. Desvincula parceiros e usuários
+        UPDATE res_partner SET company_id = NULL WHERE company_id = chicago_id;
+        UPDATE res_users SET company_id = 1 WHERE company_id = chicago_id;
+
+        -- 3. Limpa movimentações de estoque, ajustes de inventário, quants, ordens e regras
+        DELETE FROM stock_inventory_line WHERE company_id = chicago_id OR location_id IN (SELECT id FROM stock_location WHERE company_id = chicago_id);
+        DELETE FROM stock_inventory WHERE company_id = chicago_id;
+        DELETE FROM stock_request WHERE company_id = chicago_id;
+        DELETE FROM stock_move_line WHERE company_id = chicago_id;
+        DELETE FROM stock_move WHERE company_id = chicago_id;
+        DELETE FROM stock_picking WHERE company_id = chicago_id;
+        DELETE FROM stock_quant WHERE company_id = chicago_id;
+        DELETE FROM stock_rule WHERE company_id = chicago_id;
+
+        -- 4. Zera as FKs de rotas nativas no armazém
+        UPDATE stock_warehouse
+        SET reception_route_id = NULL,
+            delivery_route_id = NULL,
+            crossdock_route_id = NULL
+        WHERE company_id = chicago_id;
+
+        -- 5. Remove dependências de armazém, rotas e tipos de operação
+        DELETE FROM stock_warehouse_orderpoint WHERE company_id = chicago_id;
+        DELETE FROM stock_picking_type WHERE company_id = chicago_id;
+        DELETE FROM stock_warehouse WHERE company_id = chicago_id;
+        DELETE FROM stock_location_route WHERE company_id = chicago_id;
+
+        -- 6. Quebra a hierarquia e limpa localizações
+        UPDATE stock_location SET location_id = NULL WHERE company_id = chicago_id;
+        DELETE FROM stock_location WHERE company_id = chicago_id;
+
+        -- 7. Remove a empresa
+        DELETE FROM res_company WHERE id = chicago_id;
+
+        RAISE NOTICE 'Empresa Chicago e todas as suas dependências foram removidas com sucesso!';
+    END IF;
+END \$\$;
+"
+```
+
+> **Após a Execução:** Pressione **Ctrl + Shift + R** no navegador para recarregar a
+> interface web do Odoo e validar a exclusão na Visão Geral do Inventário e em
+> Configurações > Empresas.
+
+### 10.3 Resumo dos Problemas Enfrentados, Mapeamento Técnico e Soluções Aplicadas
+
+Durante a estruturação do fluxo de reabastecimento automatizado e transferência interna
+para a **Cadeira de Conferência (CONFIG) (Aço, Branco)**, foram identificados gargalos
+operacionais e de configuração no Odoo. A seguir, apresenta-se o detalhamento técnico de
+cada evento, incluindo os modelos (`objects`), campos e caminhos de navegação utilizados
+para a resolução.
+
+---
+
+#### 1. Limpeza de Demandas Obsoletas e Acumuladas
+
+- **Problema:** Cotações antigas em estado Rascunho acumulavam reservas e inflavam o
+  cálculo de necessidade de reposição.
+- **Mapeamento Técnico:**
+  - **Objeto (`model`):** `purchase.order`
+  - **Caminho:** `Compra > Pedidos > Solicitações de Cotação`
+- **Solução:** Acesso direto aos registros obsoletos (ex: `P00011`), alteração de estado
+  para Cancelado (`action_rfq_send` / `button_cancel`) e reprocessamento do agendador do
+  sistema.
+
+---
+
+#### 2. Travamento por Edição em Linha (_Inline Edit_) nas Listas
+
+- **Problema:** Clique sobre os registros acionava o modo de edição direta da tabela,
+  ocultando a barra superior de ações e botões de cabeçalho.
+- **Mapeamento Técnico:**
+  - **Objeto (`model`):** `stock.warehouse.orderpoint`
+  - **Caminho:** `Inventário > Operações > Reposição` (Visão `tree` / `list`)
+- **Solução:** Uso da ação de cancelamento de edição (`Descartar`) na barra de ação da
+  lista para restaurar a navegação padrão e permitir o acesso ao formulário individual
+  via visão Kanban/Form.
+
+---
+
+#### 3. Comportamento do Botão "Peça Uma Vez"
+
+- **Problema:** Ausência do botão "Peça Uma Vez" em determinados produtos e tentativa de
+  uso para transferências internas.
+- **Mapeamento Técnico:**
+  - **Objeto (`model`):** `stock.warehouse.orderpoint`
+  - **Campos Relevantes:** `trigger` (`'auto'` vs `'manual'`), `qty_to_order`
+  - **Caminho:** `Inventário > Operações > Reposição`
+- **Solução:** Esclarecimento de que o botão é exclusivo para requisição de ordens de
+  compra externas (`purchase.order`). O botão só fica visível quando
+  `trigger = 'manual'` e `qty_to_order > 0`. Para reabastecimento automático em lote, o
+  campo `trigger` deve ser mantido como `'auto'` e processado via Agendador
+  (`stock.scheduler`).
+
+---
+
+#### 4. Atendimento Parcial de Estoque (Atendimento de Demanda Existente)
+
+- **Problema:** Demanda total de 20 unidades registrada, com disponibilidade física de
+  apenas 2 unidades em `WH/Stock`, necessitando do envio imediato do saldo em mãos para
+  `Office`.
+- **Mapeamento Técnico:**
+  - **Objetos (`models`):** `stock.picking` (Transferência) / `stock.move`
+    (Movimentação)
+  - **Caminho:** `Inventário > Operações > Transferências > WH/INT/00003`
+  - **Documento de Origem:** `SRO/00004` (Requisição)
+- **Solução:** Abertura do registro de transferência interna `WH/INT/00003`, alteração
+  do campo `qty_done` (Concluído) para `2.00` e acionamento da validação
+  (`button_validate`). O Odoo disparou o assistente de _Backorder_
+  (`stock.backorder.confirmation`), gerando uma nova transferência pendente para as 18
+  unidades restantes.
+
+---
+
+#### 5. Disparo da Compra da Diferença Líquida (18 Unidades)
+
+- **Problema:** Garantir a emissão da cotação de compra restrita à necessidade real (18
+  unidades), considerando a dedução das 2 unidades atendidas via estoque local.
+- **Mapeamento Técnico:**
+  - **Objetos (`models`):** `stock.scheduler.compute.wizard` -> `purchase.order` /
+    `purchase.order.line`
+  - **Caminho:** `Inventário > Operações > Executar Agendador` ->
+    `Compra > Solicitações de Cotação`
+- **Solução:** Execução manual do motor de regras do Odoo (`procurement.group`). O
+  sistema recalculou a regra `OP/00006`, identificou o déficit líquido de 18 unidades e
+  gerou automaticamente a Solicitação de Cotação `P00012` vinculada à regra de
+  reabastecimento.
