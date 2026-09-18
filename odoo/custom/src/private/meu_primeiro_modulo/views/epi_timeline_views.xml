@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+
+    <!-- 1. Visão Tree do Estoque Consolidado -->
+    <record id="view_product_kpi_tree" model="ir.ui.view">
+        <field name="name">product.product.kpi.tree</field>
+        <field name="model">product.product</field>
+        <field name="arch" type="xml">
+            <tree create="false" delete="false">
+                <field name="default_code" string="Código" />
+                <field name="name" string="Produto" />
+                <field name="lst_price" string="Preço" />
+                <field
+                    name="total_qty_company"
+                    string="Qtd Total Empresa (Soma Global)"
+                    sum="Total"
+                />
+                <field name="uom_id" string="Unidade" />
+            </tree>
+        </field>
+    </record>
+
+    <!-- 2. Visão de Pesquisa do Estoque Consolidado -->
+    <record id="view_product_kpi_search" model="ir.ui.view">
+        <field name="name">product.product.kpi.search</field>
+        <field name="model">product.product</field>
+        <field name="arch" type="xml">
+            <search string="Buscar Produtos">
+                <field name="name" string="Produto" />
+                <field name="default_code" string="Código" />
+                <group expand="0" string="Agrupar Por">
+                    <filter
+                        string="Categoria"
+                        name="group_category"
+                        context="{'group_by': 'categ_id'}"
+                    />
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- 3. Form Principal da Timeline -->
+    <record id="view_epi_timeline_wizard_form" model="ir.ui.view">
+        <field name="name">epi.timeline.wizard.form</field>
+        <field name="model">epi.timeline.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Rastreabilidade de Equipamentos" create="false" edit="true">
+                <sheet>
+                    <div class="oe_title">
+                        <h1 class="text-primary"><i
+                                class="fa fa-history mr-2"
+                                role="img"
+                                aria-label="Histórico"
+                                title="Histórico"
+                            />Rastreabilidade do Equipamento</h1>
+                    </div>
+
+                    <group col="2" class="bg-100 p-3 rounded mb-4">
+                        <field
+                            name="product_id"
+                            options="{'no_create': True, 'no_open': True}"
+                        />
+                        <field
+                            name="lot_id"
+                            domain="[('product_id', '=', product_id)]"
+                            options="{'no_create': True, 'no_open': True}"
+                        />
+                    </group>
+
+                    <separator string="Linha do Tempo de Rastreio" />
+
+                    <field name="line_ids" mode="kanban">
+                        <form
+                            string="Detalhamento do Evento"
+                            create="false"
+                            edit="false"
+                            delete="false"
+                        >
+                            <sheet>
+                                <div class="oe_title mb-3">
+                                    <label
+                                        for="reference"
+                                        string="Documento / Referência"
+                                    />
+                                    <h1><field name="reference" readonly="1" /></h1>
+                                </div>
+                                <group>
+                                    <group string="Informações Principais">
+                                        <field
+                                            name="event_type"
+                                            string="Etapa / Evento"
+                                            readonly="1"
+                                        />
+                                        <field
+                                            name="date"
+                                            string="Data e Hora"
+                                            readonly="1"
+                                        />
+                                        <field
+                                            name="user_or_employee"
+                                            string="Responsável / Funcionário"
+                                            readonly="1"
+                                        />
+                                    </group>
+                                </group>
+                                <group
+                                    string="Histórico Completo / Observações Auditadas"
+                                >
+                                    <field
+                                        name="description"
+                                        nolabel="1"
+                                        readonly="1"
+                                    />
+                                </group>
+                            </sheet>
+                        </form>
+
+                        <kanban class="o_kanban_mobile custom_timeline_wrapper">
+                            <field name="date" />
+                            <field name="event_type" />
+                            <field name="reference" />
+                            <field name="description" />
+                            <field name="user_or_employee" />
+                            <templates>
+                                <t t-name="kanban-box">
+                                    <div
+                                        class="timeline_node_container oe_kanban_global_click"
+                                    >
+                                        <div class="timeline_badge">
+                                            <i
+                                                class="fa fa-circle"
+                                                role="img"
+                                                aria-label="Etapa"
+                                                title="Marcador"
+                                            />
+                                        </div>
+                                        <div class="timeline_card_content">
+                                            <div
+                                                class="d-flex justify-content-between align-items-center mb-2"
+                                            >
+                                                <span
+                                                    class="badge badge-pill badge-info px-2 py-1"
+                                                >
+                                                    <field name="event_type" />
+                                                </span>
+                                                <small
+                                                    class="text-muted font-weight-bold"
+                                                >
+                                                    <i
+                                                        class="fa fa-clock-o mr-1"
+                                                        role="img"
+                                                        aria-label="Data"
+                                                        title="Data"
+                                                    /><field name="date" />
+                                                </small>
+                                            </div>
+                                            <div>
+                                                <a
+                                                    type="open"
+                                                    class="font-weight-bold text-dark h5 mb-2 d-block text-decoration-none"
+                                                >
+                                                    <field name="reference" />
+                                                </a>
+                                            </div>
+                                            <div
+                                                class="text-secondary my-2"
+                                                style="font-size: 0.9rem; line-height: 1.4;"
+                                            >
+                                                <field name="description" />
+                                            </div>
+                                            <div
+                                                class="d-flex justify-content-between align-items-center text-muted font-italic small border-top pt-2 mt-2"
+                                            >
+                                                <span><i
+                                                        class="fa fa-user mr-1"
+                                                        role="img"
+                                                        aria-label="Responsável"
+                                                        title="Responsável"
+                                                    /><field
+                                                        name="user_or_employee"
+                                                    /></span>
+                                                <a
+                                                    type="open"
+                                                    class="text-primary font-weight-bold"
+                                                >Ver Detalhes <i
+                                                        class="fa fa-arrow-right ml-1"
+                                                    /></a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </t>
+                            </templates>
+                        </kanban>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- 4. Ações de Janela -->
+    <record id="action_product_kpi_dashboard" model="ir.actions.act_window">
+        <field name="name">KPI Estoque Total (Por Empresa)</field>
+        <field name="res_model">product.product</field>
+        <field name="view_mode">tree,form</field>
+        <field name="search_view_id" ref="view_product_kpi_search" />
+        <field name="view_id" ref="view_product_kpi_tree" />
+    </record>
+
+    <record id="action_epi_timeline_wizard" model="ir.actions.act_window">
+        <field name="name">Timeline Rastreabilidade</field>
+        <field name="res_model">epi.timeline.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+    </record>
+
+    <!-- 5. Menus -->
+    <menuitem
+        id="menu_epi_dashboard_root"
+        name="Central EPI &amp; Equipamentos"
+        sequence="5"
+    />
+    <menuitem
+        id="menu_epi_kpi"
+        name="KPI Estoque Consolidado"
+        parent="menu_epi_dashboard_root"
+        action="action_product_kpi_dashboard"
+        sequence="1"
+    />
+    <menuitem
+        id="menu_epi_timeline"
+        name="Timeline Rastreabilidade"
+        parent="menu_epi_dashboard_root"
+        action="action_epi_timeline_wizard"
+        sequence="2"
+    />
+
+</odoo>

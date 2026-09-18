@@ -1,0 +1,58 @@
+.custom_timeline_wrapper {
+    position: relative;
+    padding-left: 30px !important;
+    background: transparent !important;
+
+    &::before {
+        content: "";
+        position: absolute;
+        top: 15px;
+        bottom: 15px;
+        left: 42px;
+        width: 3px;
+        background: #dee2e6;
+        z-index: 1;
+    }
+
+    .timeline_node_container {
+        position: relative;
+        margin-bottom: 25px;
+        z-index: 2;
+
+        .timeline_badge {
+            position: absolute;
+            left: -23px;
+            top: 20px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #ffffff;
+            color: #007bff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            box-shadow: 0 0 0 4px #dee2e6;
+        }
+
+        .timeline_card_content {
+            margin-left: 15px;
+            width: 100%;
+            max-width: 650px;
+            background: #ffffff;
+            border: 1px solid #e9ecef;
+            border-left: 5px solid #007bff;
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04);
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+
+            &:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+                border-left-color: #0056b3;
+            }
+        }
+    }
+}

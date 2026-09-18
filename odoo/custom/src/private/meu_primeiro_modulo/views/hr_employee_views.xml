@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+
+    <!-- Herança da Form View existente do Funcionário -->
+    <record id="view_employee_form_custom" model="ir.ui.view">
+        <field name="name">hr.employee.form.custom</field>
+        <field name="model">hr.employee</field>
+        <!-- ID da view original que queremos alterar (módulo.id_da_view) -->
+        <field name="inherit_id" ref="hr.view_employee_form" />
+        <field name="arch" type="xml">
+
+            <!-- Exemplo 1: Adicionar nosso novo campo logo após o campo 'category_ids' -->
+            <xpath expr="//field[@name='category_ids']" position="after">
+                <field name="codigo_interno" />
+                <field name="resumo_status" />
+            </xpath>
+
+            <!-- Exemplo 2: Esconder campos polutuídos/desnecessários para a sua equipe -->
+            <xpath expr="//field[@name='mobile_phone']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
+
+        </field>
+    </record>
+
+    <!-- Opcional: Criar um Menu simplificado exclusivo para o seu fluxo -->
+    <record id="action_hr_employee_custom" model="ir.actions.act_window">
+        <field name="name">Visão Simplificada de RH</field>
+        <field name="res_model">hr.employee</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <menuitem id="menu_custom_hr_root" name="Painel RH Escudo" />
+    <menuitem
+        id="menu_custom_hr_employee"
+        name="Funcionários (Resumo)"
+        parent="menu_custom_hr_root"
+        action="action_hr_employee_custom"
+    />
+
+</odoo>

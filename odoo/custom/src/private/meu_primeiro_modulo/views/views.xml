@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_meu_exemplo_tree" model="ir.ui.view">
+        <field name="name">meu.exemplo.tree</field>
+        <field name="model">meu.exemplo</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name" />
+                <field name="description" />
+            </tree>
+        </field>
+    </record>
+
+    <record id="action_meu_exemplo" model="ir.actions.act_window">
+        <field name="name">Meus Registros</field>
+        <field name="res_model">meu.exemplo</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <menuitem id="menu_meu_exemplo_root" name="Meu Módulo" />
+    <menuitem
+        id="menu_meu_exemplo_item"
+        name="Registros"
+        parent="menu_meu_exemplo_root"
+        action="action_meu_exemplo"
+    />
+</odoo>
