@@ -1,31 +1,64 @@
-# Ignore all src directories except private and files with a dot
+# Environmental variables and secrets (PREVENTS GITGUARDIAN LEAKS)
+.env
+.env.*
+!.env.example
+*.env
+
+# Ignore all src directories except private
 /odoo/auto
 /odoo/custom/src/*/
 !/odoo/custom/src/private/
 
-# Ignore docker-compose.yml and overrides by default, to allow easy defaults per clone
+# Doodba / Odoo local data & databases
+/filestore/
+/sessions/
+/*.db
+/*.sqlite3
+
+# Ignore docker-compose.yml and overrides by default
 /docker-compose.yml
 /docker-compose.override.yml
 
 # Compiled formats, cache, temporary files, git garbage
+__pycache__/
+*.py[cod]
+*$py.class
+*.mo
+*.po~
+*.egg-info/
+.installed.cfg
+*.egg
+*.orig
+*.rej
 **.~
-**.mo
-**.py[co]
-**.egg-info
-**.orig
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
 
 # User-specific or editor-specific development files and settings
-.vscode/*
-!/.vscode/*.jinja
-!/.vscode/extensions.json
-!/.vscode/launch.json
-!/.vscode/settings.json
-!/.vscode/tasks.json
-/odoo/custom/src/private/.vscode/*
-/.venv
+.vscode/
+!.vscode/*.jinja
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+/odoo/custom/src/private/.vscode/
 /doodba.*.code-workspace
 /src
-.idea/*
+.idea/
+*.swp
+*~
 
 # Project-specific docker configurations
 /.docker/
+
+# Testing & Logs
+/logs/
+*.log
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
